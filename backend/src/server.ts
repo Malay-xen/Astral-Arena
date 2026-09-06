@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 5000;
 app.use(helmet());
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin: process.env.FRONTEND_URL || 'https://astral-arena-o8eo.vercel.app',
     credentials: true,
   })
 );
