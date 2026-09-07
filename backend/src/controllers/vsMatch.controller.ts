@@ -2,21 +2,10 @@ import { Request, Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { pool } from '../config/db';
 
-const VALID_TIERS: Record<number, number> = {
-  10: 15,
-  20: 30,
-  50: 80,
-};
-
 // =========================================================================
 // 1. PLAYER-FACING ENDPOINTS (STRICT PRIVACY - NO PARTICIPANT LEAKS)
 // =========================================================================
 
-/**
- * GET /vs-matches?category=1v1
- * Returns available matches created by admin for a specific category.
- * NEVER returns participant usernames, MLBB IDs, or server IDs.
- */
 export const getMatchesByCategory = async (req: Request, res: Response) => {
   const { category } = req.query;
   const authHeader = req.headers.authorization;
@@ -29,7 +18,7 @@ export const getMatchesByCategory = async (req: Request, res: Response) => {
       const decoded = jwt.default.verify(token, process.env.JWT_SECRET as string) as { id: string };
       currentUserId = decoded.id;
     } catch {
-      // Unauthenticated visitor browsing
+      // Unauthenticated visitor
     }
   }
 
@@ -89,7 +78,7 @@ export const getMatchesByCategory = async (req: Request, res: Response) => {
       status: row.status,
       scheduledTime: row.scheduled_time,
       isJoined: row.is_joined,
-      roomCode: row.room_code, // Only visible if user joined this match
+      roomCode: row.room_code,
       createdAt: row.created_at,
     }));
 
@@ -100,11 +89,6 @@ export const getMatchesByCategory = async (req: Request, res: Response) => {
   }
 };
 
-/**
- * POST /vs-matches/:id/join
- * Player joins an EXACT admin-created match.
- * Prevents overbooking using database transactions with row-locking.
- */
 export const joinMatchById = async (req: AuthRequest, res: Response) => {
   const { id: matchId } = req.params;
   const { mlbbId, serverId } = req.body;
@@ -118,7 +102,6 @@ export const joinMatchById = async (req: AuthRequest, res: Response) => {
   try {
     await client.query('BEGIN');
 
-    // 1. Lock match record to prevent race conditions
     const matchRes = await client.query(
       `SELECT id, match_code, category, sub_mode, entry_fee, winning_amount, 
               required_players, current_players, status, scheduled_time, room_code
@@ -134,19 +117,16 @@ export const joinMatchById = async (req: AuthRequest, res: Response) => {
 
     const match = matchRes.rows[0];
 
-    // Check if open
     if (match.status !== 'WAITING_FOR_PLAYERS' && match.status !== 'SCHEDULED') {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Registration closed. This match is no longer accepting players.' });
     }
 
-    // Check if slots are full
     if (match.current_players >= match.required_players) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Registration closed. This match is already full.' });
     }
 
-    // Check if player already registered in this match
     const participantCheck = await client.query(
       'SELECT id FROM vs_match_participants WHERE match_id = $1 AND user_id = $2',
       [matchId, userId]
@@ -157,7 +137,6 @@ export const joinMatchById = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'You are already registered in this match.' });
     }
 
-    // 2. Lock player's wallet and check balance
     const entryFee = parseFloat(match.entry_fee);
     const walletRes = await client.query(
       'SELECT id, balance FROM wallets WHERE user_id = $1 FOR UPDATE',
@@ -177,14 +156,12 @@ export const joinMatchById = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // 3. Deduct entry fee
     const updatedBalance = currentBalance - entryFee;
     await client.query(
       'UPDATE wallets SET balance = $1, updated_at = NOW() WHERE id = $2',
       [updatedBalance, walletRes.rows[0].id]
     );
 
-    // 4. Record wallet transaction
     const txRes = await client.query(
       `INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, balance_after, reference_id, description, status)
        VALUES ($1, $2, 'ENTRY_FEE', $3, $4, $5, $6, 'SUCCESS')
@@ -199,7 +176,6 @@ export const joinMatchById = async (req: AuthRequest, res: Response) => {
       ]
     );
 
-    // 5. Register participant
     const newPlayerCount = match.current_players + 1;
     await client.query(
       `INSERT INTO vs_match_participants (match_id, user_id, mlbb_id, server_id, team_slot, transaction_id)
@@ -207,7 +183,6 @@ export const joinMatchById = async (req: AuthRequest, res: Response) => {
       [matchId, userId, mlbbId.trim(), serverId.trim(), (match.current_players % 2) + 1, txRes.rows[0].id]
     );
 
-    // 6. Update match player count & status if filled
     let updatedStatus = match.status;
     if (newPlayerCount >= match.required_players) {
       updatedStatus = 'SCHEDULED';
@@ -249,26 +224,25 @@ export const joinMatchById = async (req: AuthRequest, res: Response) => {
   }
 };
 
-/**
- * GET /vs-matches/history
- * Returns the authenticated user's joined match history with live slots & lobby code.
- */
 export const getPlayerMatchHistory = async (req: AuthRequest, res: Response) => {
   const userId = req.user!.id;
 
   try {
+    // Only finished matches (VICTORY / DEFEAT) count towards stats
     const statsRes = await pool.query(
       `SELECT 
-         COUNT(*)::int as total_played,
-         COUNT(*) FILTER (WHERE result = 'VICTORY')::int as total_won
-       FROM vs_match_participants
-       WHERE user_id = $1`,
+         COUNT(*) FILTER (WHERE p.result IN ('VICTORY', 'DEFEAT'))::int as total_played,
+         COUNT(*) FILTER (WHERE p.result = 'VICTORY')::int as total_won
+       FROM vs_match_participants p
+       JOIN vs_matches m ON m.id = p.match_id
+       WHERE p.user_id = $1 AND m.status != 'CANCELLED'`,
       [userId]
     );
 
     const matchesPlayed = statsRes.rows[0]?.total_played || 0;
     const matchesWon = statsRes.rows[0]?.total_won || 0;
 
+    // Returns result as 'CANCELLED' if match was cancelled
     const matchesRes = await pool.query(
       `SELECT 
          m.id,
@@ -282,7 +256,10 @@ export const getPlayerMatchHistory = async (req: AuthRequest, res: Response) => 
          m.room_code,
          m.status as match_status,
          m.scheduled_time,
-         p.result,
+         CASE 
+           WHEN m.status = 'CANCELLED' THEN 'CANCELLED'::player_match_result
+           ELSE p.result 
+         END as result,
          p.payout_amount,
          p.registered_at,
          p.mlbb_id,
@@ -310,7 +287,7 @@ export const getPlayerMatchHistory = async (req: AuthRequest, res: Response) => 
         winningAmount: parseFloat(row.winning_amount),
         currentPlayers: row.current_players,
         requiredPlayers: row.required_players,
-        roomCode: row.room_code, // Safe because user joined this match
+        roomCode: row.room_code,
         matchStatus: row.match_status,
         scheduledTime: row.scheduled_time,
         result: row.result,
@@ -327,13 +304,9 @@ export const getPlayerMatchHistory = async (req: AuthRequest, res: Response) => 
 };
 
 // =========================================================================
-// 2. ADMIN MATCH MANAGEMENT ENDPOINTS (ADMIN ROLE REQUIRED)
+// 2. ADMIN MATCH MANAGEMENT ENDPOINTS
 // =========================================================================
 
-/**
- * POST /vs-matches/admin/create
- * Admin creates a new match under 1v1, 3v3, or 5v5.
- */
 export const adminCreateMatch = async (req: AuthRequest, res: Response) => {
   const { category, subMode, entryFee, winningAmount, scheduledTime, roomCode } = req.body;
 
@@ -349,7 +322,7 @@ export const adminCreateMatch = async (req: AuthRequest, res: Response) => {
   }
 
   const requiredPlayers = category === '1v1' ? 2 : category === '3v3' ? 6 : 10;
-  const matchSubMode = subMode || (category === '1v1' ? 'Sanctum Duel' : category === '3v3' ? 'Brawl Arena' : 'Classic Conquest');
+  const matchSubMode = subMode || (category === '1v1' ? 'Large Map (Classic)' : category === '3v3' ? 'Classic Arena' : 'Classic Conquest');
 
   try {
     const result = await pool.query(
@@ -369,10 +342,6 @@ export const adminCreateMatch = async (req: AuthRequest, res: Response) => {
   }
 };
 
-/**
- * GET /vs-matches/admin/all
- * Returns all matches with admin metadata.
- */
 export const adminGetAllMatches = async (req: AuthRequest, res: Response) => {
   const { category } = req.query;
 
@@ -399,10 +368,6 @@ export const adminGetAllMatches = async (req: AuthRequest, res: Response) => {
   }
 };
 
-/**
- * GET /vs-matches/admin/:id/participants
- * Admin views the real participant identities (MLBB IDs, Server IDs, Usernames).
- */
 export const adminGetMatchParticipants = async (req: AuthRequest, res: Response) => {
   const { id: matchId } = req.params;
 
@@ -440,10 +405,6 @@ export const adminGetMatchParticipants = async (req: AuthRequest, res: Response)
   }
 };
 
-/**
- * PUT /vs-matches/admin/:id
- * Admin updates Lobby Code (room_code), match time, or match status.
- */
 export const adminUpdateMatch = async (req: AuthRequest, res: Response) => {
   const { id: matchId } = req.params;
   const { roomCode, scheduledTime, status } = req.body;
@@ -474,11 +435,6 @@ export const adminUpdateMatch = async (req: AuthRequest, res: Response) => {
   }
 };
 
-/**
- * POST /vs-matches/admin/:id/settle
- * Admin declares the winner: marks VICTORY, credits winning_amount to winner's wallet,
- * marks others as DEFEAT, and marks match as COMPLETED.
- */
 export const adminSettleMatch = async (req: AuthRequest, res: Response) => {
   const { id: matchId } = req.params;
   const { winnerUserId } = req.body;
@@ -509,7 +465,6 @@ export const adminSettleMatch = async (req: AuthRequest, res: Response) => {
 
     const prize = parseFloat(match.winning_amount);
 
-    // 1. Mark winner
     await client.query(
       `UPDATE vs_match_participants 
        SET result = 'VICTORY', payout_amount = $1 
@@ -517,7 +472,6 @@ export const adminSettleMatch = async (req: AuthRequest, res: Response) => {
       [prize, matchId, winnerUserId]
     );
 
-    // 2. Mark losers
     await client.query(
       `UPDATE vs_match_participants 
        SET result = 'DEFEAT', payout_amount = 0.00 
@@ -525,7 +479,6 @@ export const adminSettleMatch = async (req: AuthRequest, res: Response) => {
       [matchId, winnerUserId]
     );
 
-    // 3. Credit winner wallet
     const walletRes = await client.query(
       `UPDATE wallets 
        SET balance = balance + $1, updated_at = NOW() 
@@ -534,7 +487,6 @@ export const adminSettleMatch = async (req: AuthRequest, res: Response) => {
       [prize, winnerUserId]
     );
 
-    // 4. Record wallet transaction
     if (walletRes.rows.length > 0) {
       await client.query(
         `INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, balance_after, reference_id, description, status)
@@ -550,7 +502,6 @@ export const adminSettleMatch = async (req: AuthRequest, res: Response) => {
       );
     }
 
-    // 5. Complete match
     await client.query(
       `UPDATE vs_matches SET status = 'COMPLETED', updated_at = NOW() WHERE id = $1`,
       [matchId]
@@ -567,10 +518,6 @@ export const adminSettleMatch = async (req: AuthRequest, res: Response) => {
   }
 };
 
-/**
- * POST /vs-matches/admin/:id/cancel
- * Admin cancels match and refunds all participants atomically.
- */
 export const adminCancelMatch = async (req: AuthRequest, res: Response) => {
   const { id: matchId } = req.params;
 
@@ -596,7 +543,6 @@ export const adminCancelMatch = async (req: AuthRequest, res: Response) => {
 
     const entryFee = parseFloat(match.entry_fee);
 
-    // Get participants
     const partsRes = await client.query(
       'SELECT user_id FROM vs_match_participants WHERE match_id = $1',
       [matchId]
@@ -625,8 +571,15 @@ export const adminCancelMatch = async (req: AuthRequest, res: Response) => {
       }
     }
 
+    // 1. Mark match status as CANCELLED
     await client.query(
       `UPDATE vs_matches SET status = 'CANCELLED', updated_at = NOW() WHERE id = $1`,
+      [matchId]
+    );
+
+    // 2. Also mark participant records as CANCELLED so player histories reflect the refund!
+    await client.query(
+      `UPDATE vs_match_participants SET result = 'CANCELLED' WHERE match_id = $1`,
       [matchId]
     );
 

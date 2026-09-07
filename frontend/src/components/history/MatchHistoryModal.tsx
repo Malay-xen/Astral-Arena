@@ -29,14 +29,13 @@ export const MatchHistoryModal: React.FC<MatchHistoryModalProps> = ({ isOpen, on
 
   if (!isOpen) return null;
 
-  // Separate active/queued matches from finished matches
-  const activeMatches = matches.filter((m) => m.result === 'PENDING');
-  const finishedMatches = matches.filter((m) => m.result !== 'PENDING');
+  // Active matches are ONLY pending matches that are NOT cancelled
+  const activeMatches = matches.filter((m) => m.result === 'PENDING' && m.matchStatus !== 'CANCELLED');
+  const pastMatches = matches.filter((m) => m.result !== 'PENDING' || m.matchStatus === 'CANCELLED');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
       <div className="relative w-full max-w-2xl bg-[#0e121d] border border-[#1b2234] rounded-2xl p-6 shadow-2xl text-white">
-        {/* Close Button */}
         <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-white">
           <X className="w-5 h-5 text-cyan-400" />
         </button>
@@ -77,7 +76,7 @@ export const MatchHistoryModal: React.FC<MatchHistoryModalProps> = ({ isOpen, on
           <div className="py-12 text-center text-xs text-gray-400">Loading your battle records...</div>
         ) : (
           <div className="space-y-5 max-h-80 overflow-y-auto pr-1">
-            {/* 1. ACTIVE / JOINED MATCHES SECTION */}
+            {/* 1. ACTIVE / QUEUED MATCHES */}
             <div>
               <div className="text-xs font-black uppercase tracking-wider text-cyan-400 mb-2.5 flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 animate-pulse" />
@@ -107,9 +106,7 @@ export const MatchHistoryModal: React.FC<MatchHistoryModalProps> = ({ isOpen, on
                         </span>
                       </div>
 
-                      {/* 3-COLUMN BAR: LOBBY ID + MATCH HELD TIME + ENTRY/WIN */}
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs pt-1.5 border-t border-[#1a2338]">
-                        {/* Column 1: Lobby ID */}
                         <div>
                           <span className="text-gray-500 block text-[10px] uppercase">Lobby ID</span>
                           <span className="font-bold text-cyan-300 font-mono text-sm">
@@ -117,9 +114,8 @@ export const MatchHistoryModal: React.FC<MatchHistoryModalProps> = ({ isOpen, on
                           </span>
                         </div>
 
-                        {/* Column 2: Match Held Time (NOW PROMINENTLY DISPLAYED) */}
                         <div>
-                          <span className="text-gray-500 block text-[10px] uppercase flex items-center gap-1">
+                          <span className="text-gray-500 text-[10px] uppercase flex items-center gap-1">
                             <Clock className="w-2.5 h-2.5 text-amber-400" /> Match Held Time
                           </span>
                           <span className="font-bold text-amber-300 text-xs">
@@ -129,7 +125,6 @@ export const MatchHistoryModal: React.FC<MatchHistoryModalProps> = ({ isOpen, on
                           </span>
                         </div>
 
-                        {/* Column 3: Entry & Win */}
                         <div className="sm:text-right">
                           <span className="text-gray-500 block text-[10px] uppercase">Entry / Win</span>
                           <span className="font-bold text-emerald-400 text-xs">
@@ -150,47 +145,68 @@ export const MatchHistoryModal: React.FC<MatchHistoryModalProps> = ({ isOpen, on
               )}
             </div>
 
-            {/* 2. COMPLETED MATCHES SECTION */}
+            {/* 2. PAST & CANCELLED MATCHES */}
             <div>
               <div className="text-xs font-black uppercase tracking-wider text-gray-400 mb-2.5">
-                Past Completed Matches ({finishedMatches.length})
+                Past Battles & Cancelled Matches ({pastMatches.length})
               </div>
 
-              {finishedMatches.length === 0 ? (
+              {pastMatches.length === 0 ? (
                 <div className="p-3.5 bg-[#121624]/60 border border-[#1b2234] rounded-xl text-xs text-gray-500 text-center">
-                  No finished matches yet.
+                  No past matches recorded yet.
                 </div>
               ) : (
                 <div className="space-y-2.5">
-                  {finishedMatches.map((m) => (
-                    <div
-                      key={m.id}
-                      className="p-3.5 bg-[#121624] border border-[#1e263a] rounded-xl flex items-center justify-between text-xs"
-                    >
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-bold text-white">{m.category} • {m.subMode}</span>
-                        </div>
-                        <div className="text-[11px] text-gray-400">
-                          Entry: ₹{m.entryFee} • Win: ₹{m.winningAmount}
-                        </div>
-                        <div className="text-[10px] text-gray-500 flex items-center gap-1 mt-1">
-                          <Calendar className="w-3 h-3" />
-                          {new Date(m.registeredAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
-                        </div>
-                      </div>
+                  {pastMatches.map((m) => {
+                    const isCancelled = m.matchStatus === 'CANCELLED' || m.result === 'CANCELLED';
 
-                      <span
-                        className={`px-2.5 py-1 rounded-md text-xs font-black uppercase tracking-wider ${
-                          m.result === 'VICTORY'
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                            : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                    return (
+                      <div
+                        key={m.id}
+                        className={`p-3.5 rounded-xl border flex items-center justify-between text-xs ${
+                          isCancelled
+                            ? 'bg-[#141014] border-red-500/20'
+                            : 'bg-[#121624] border-[#1e263a]'
                         }`}
                       >
-                        {m.result}
-                      </span>
-                    </div>
-                  ))}
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-bold text-white">{m.category} • {m.subMode}</span>
+                            {isCancelled && (
+                              <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded">
+                                Money Refunded
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-gray-400">
+                            {isCancelled ? (
+                              <span className="text-emerald-400 font-semibold">
+                                Entry: ₹{m.entryFee} (Refunded to wallet)
+                              </span>
+                            ) : (
+                              <span>Entry: ₹{m.entryFee} • Win: ₹{m.winningAmount}</span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-gray-500 flex items-center gap-1 mt-1">
+                            <Calendar className="w-3 h-3" />
+                            {new Date(m.registeredAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                          </div>
+                        </div>
+
+                        <span
+                          className={`px-2.5 py-1 rounded-md text-xs font-black uppercase tracking-wider ${
+                            isCancelled
+                              ? 'bg-red-500/20 text-red-400 border border-red-500/40'
+                              : m.result === 'VICTORY'
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                              : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                          }`}
+                        >
+                          {isCancelled ? 'CANCELLED' : m.result}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

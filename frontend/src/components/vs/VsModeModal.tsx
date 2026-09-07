@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, 
-  Swords, 
-   
+  Swords,  
   CheckCircle2, 
   ChevronRight, 
   AlertCircle, 
@@ -39,17 +38,17 @@ export const VsModeModal: React.FC<VsModeModalProps> = ({
   const [loading, setLoading] = useState(true);
   const [subModeFilter, setSubModeFilter] = useState<'ALL' | 'LARGE' | 'SMALL'>('ALL');
 
-  // Selected match for confirmation
   const [selectedMatch, setSelectedMatch] = useState<VsMatchListing | null>(null);
   const [step, setStep] = useState<'LIST' | 'CONFIRM' | 'SUCCESS'>('LIST');
 
-  // Confirmation form
   const [mlbbId, setMlbbId] = useState('');
   const [serverId, setServerId] = useState('');
   const [confirmCheckbox, setConfirmCheckbox] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [joinedSuccess, setJoinedSuccess] = useState<any>(null);
+
+  const prevOpenRef = useRef(false);
 
   const fetchMatches = async (cat: string) => {
     setLoading(true);
@@ -64,7 +63,7 @@ export const VsModeModal: React.FC<VsModeModalProps> = ({
   };
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !prevOpenRef.current) {
       setCategory(initialCategory);
       setStep('LIST');
       setSelectedMatch(null);
@@ -74,16 +73,16 @@ export const VsModeModal: React.FC<VsModeModalProps> = ({
       setServerId(user?.serverId || '');
       fetchMatches(initialCategory);
     }
+    prevOpenRef.current = isOpen;
   }, [isOpen, initialCategory, user?.mlbbId, user?.serverId]);
 
   if (!isOpen) return null;
 
   const currentBalance = user?.walletBalance || 0;
 
-  // Filter 1v1 sub-modes
   const filteredMatches = matches.filter((m) => {
     if (category !== '1v1' || subModeFilter === 'ALL') return true;
-    if (subModeFilter === 'LARGE') return m.subMode.toLowerCase().includes('sanctum') || m.subMode.toLowerCase().includes('large');
+    if (subModeFilter === 'LARGE') return m.subMode.toLowerCase().includes('classic') || m.subMode.toLowerCase().includes('large');
     if (subModeFilter === 'SMALL') return m.subMode.toLowerCase().includes('brawl') || m.subMode.toLowerCase().includes('small');
     return true;
   });
@@ -93,7 +92,7 @@ export const VsModeModal: React.FC<VsModeModalProps> = ({
       setError('Please sign in to join matches.');
       return;
     }
-    if (match.currentPlayers >= match.requiredPlayers || match.status !== 'WAITING_FOR_PLAYERS') {
+    if (match.status === 'CANCELLED' || match.currentPlayers >= match.requiredPlayers || match.status !== 'WAITING_FOR_PLAYERS') {
       return;
     }
     setError(null);
@@ -153,7 +152,6 @@ export const VsModeModal: React.FC<VsModeModalProps> = ({
         {/* STEP 1: MATCH LISTING */}
         {step === 'LIST' && (
           <div className="flex-1 flex flex-col overflow-hidden">
-            {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-4 border-b border-[#1b2234]">
               <div>
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-black tracking-wider uppercase mb-1">
@@ -166,7 +164,6 @@ export const VsModeModal: React.FC<VsModeModalProps> = ({
                 </p>
               </div>
 
-              {/* Balance Badge */}
               <div className="flex items-center gap-3 bg-[#131724] border border-[#1e2538] px-3.5 py-2 rounded-xl self-start sm:self-auto">
                 <div>
                   <span className="text-[10px] text-gray-400 uppercase tracking-wider block">Wallet Balance</span>
@@ -184,7 +181,6 @@ export const VsModeModal: React.FC<VsModeModalProps> = ({
               </div>
             </div>
 
-            {/* Sub-mode Filter for 1v1 */}
             {category === '1v1' && (
               <div className="flex items-center gap-2 mb-4">
                 <span className="text-xs text-gray-400 flex items-center gap-1 mr-1">
@@ -192,7 +188,7 @@ export const VsModeModal: React.FC<VsModeModalProps> = ({
                 </span>
                 {[
                   { id: 'ALL', label: 'All Maps' },
-                  { id: 'LARGE', label: 'Large Map (Sanctum)' },
+                  { id: 'LARGE', label: 'Large Map (Classic)' },
                   { id: 'SMALL', label: 'Small Map (Brawl)' },
                 ].map((f) => (
                   <button
@@ -210,7 +206,6 @@ export const VsModeModal: React.FC<VsModeModalProps> = ({
               </div>
             )}
 
-            {/* Error Message */}
             {error && (
               <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
@@ -228,6 +223,7 @@ export const VsModeModal: React.FC<VsModeModalProps> = ({
                 </div>
               ) : (
                 filteredMatches.map((m) => {
+                  const isCancelled = m.status === 'CANCELLED';
                   const isFull = m.currentPlayers >= m.requiredPlayers || m.status !== 'WAITING_FOR_PLAYERS';
                   const isUserJoined = m.isJoined;
 
@@ -235,7 +231,9 @@ export const VsModeModal: React.FC<VsModeModalProps> = ({
                     <div
                       key={m.id}
                       className={`p-4 rounded-xl border transition-all ${
-                        isUserJoined
+                        isCancelled
+                          ? 'bg-[#141014] border-red-500/30 opacity-80'
+                          : isUserJoined
                           ? 'bg-[#101b2b] border-cyan-500/50 shadow-lg shadow-cyan-500/10'
                           : isFull
                           ? 'bg-[#11141d] border-[#1c2230] opacity-75'
@@ -243,21 +241,25 @@ export const VsModeModal: React.FC<VsModeModalProps> = ({
                       }`}
                     >
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        {/* Match Details */}
                         <div className="space-y-1.5 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-xs font-mono font-bold text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded">
                               #{m.matchCode}
                             </span>
                             <span className="text-xs font-bold text-white">{m.subMode}</span>
-                            {isUserJoined && (
+                            
+                            {/* Clear Status Badges */}
+                            {isCancelled ? (
+                              <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30">
+                                MATCH CANCELLED
+                              </span>
+                            ) : isUserJoined ? (
                               <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                                 You Joined
                               </span>
-                            )}
+                            ) : null}
                           </div>
 
-                          {/* Entry & Win details */}
                           <div className="flex items-center gap-4 text-xs">
                             <span className="text-gray-300">
                               Entry: <strong className="text-white">₹{m.entryFee}</strong>
@@ -267,7 +269,6 @@ export const VsModeModal: React.FC<VsModeModalProps> = ({
                             </span>
                           </div>
 
-                          {/* Match Time & Slots */}
                           <div className="flex items-center gap-4 text-[11px] text-gray-400">
                             <span className="flex items-center gap-1">
                               <Clock className="w-3 h-3 text-cyan-400" />
@@ -277,12 +278,18 @@ export const VsModeModal: React.FC<VsModeModalProps> = ({
                             </span>
                             <span className="flex items-center gap-1 font-semibold text-gray-300">
                               <Users className="w-3 h-3 text-gray-500" />
-                              {m.currentPlayers} / {m.requiredPlayers} Players ({m.remainingSlots} slot{m.remainingSlots === 1 ? '' : 's'} remaining)
+                              {m.currentPlayers} / {m.requiredPlayers} Players
                             </span>
                           </div>
 
-                          {/* If player already joined and roomCode is announced */}
-                          {isUserJoined && m.roomCode && (
+                          {/* Cancellation Note if player joined */}
+                          {isCancelled && isUserJoined && (
+                            <div className="text-[11px] text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-md inline-block">
+                              ✓ Cancelled by host: ₹{m.entryFee} refunded to your wallet
+                            </div>
+                          )}
+
+                          {isUserJoined && !isCancelled && m.roomCode && (
                             <div className="text-xs text-cyan-300 font-bold bg-cyan-500/10 border border-cyan-500/20 p-2 rounded-lg mt-1">
                               Lobby ID: <span className="font-mono text-white text-sm">{m.roomCode}</span>
                             </div>
@@ -291,7 +298,11 @@ export const VsModeModal: React.FC<VsModeModalProps> = ({
 
                         {/* Action CTA */}
                         <div className="shrink-0 flex items-center justify-end">
-                          {isUserJoined ? (
+                          {isCancelled ? (
+                            <span className="px-3.5 py-2 rounded-xl bg-red-950/40 text-red-400 border border-red-500/30 text-xs font-bold">
+                              CANCELLED • REFUNDED
+                            </span>
+                          ) : isUserJoined ? (
                             <button
                               onClick={() => {
                                 onClose();
@@ -323,7 +334,7 @@ export const VsModeModal: React.FC<VsModeModalProps> = ({
           </div>
         )}
 
-        {/* STEP 2: PLAYER JOIN CONFIRMATION FOR THE CHOSEN MATCH */}
+        {/* STEP 2: PLAYER JOIN CONFIRMATION */}
         {step === 'CONFIRM' && selectedMatch && (
           <form onSubmit={handleConfirmJoin} className="flex-1 flex flex-col justify-between overflow-y-auto pr-1">
             <div>
@@ -347,7 +358,6 @@ export const VsModeModal: React.FC<VsModeModalProps> = ({
                 </div>
               )}
 
-              {/* Exact Selected Match Card */}
               <div className="bg-[#121624] p-4 rounded-xl border border-[#1e263a] mb-5 space-y-2 text-xs">
                 <div className="flex justify-between">
                   <span className="text-gray-400">Match Number</span>
@@ -379,7 +389,6 @@ export const VsModeModal: React.FC<VsModeModalProps> = ({
                 </div>
               </div>
 
-              {/* MLBB ID and Server ID Input */}
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <div>
                   <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1">
@@ -410,7 +419,6 @@ export const VsModeModal: React.FC<VsModeModalProps> = ({
                 </div>
               </div>
 
-              {/* Checkbox confirmation */}
               <label className="flex items-start gap-2.5 p-3 rounded-xl bg-[#121624] border border-[#1e263a] cursor-pointer mb-6 text-xs text-gray-300">
                 <input
                   type="checkbox"
@@ -462,7 +470,6 @@ export const VsModeModal: React.FC<VsModeModalProps> = ({
               You are registered for Match #{joinedSuccess.matchCode}.
             </p>
 
-            {/* Summary Box */}
             <div className="bg-[#121624] p-4 rounded-xl border border-[#1e263a] max-w-md mx-auto mb-6 text-left space-y-2 text-xs">
               <div className="flex justify-between">
                 <span className="text-gray-400">Match Number</span>
