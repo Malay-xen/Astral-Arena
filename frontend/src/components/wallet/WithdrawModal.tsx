@@ -122,7 +122,7 @@ export const WithdrawModal: React.FC<WithdrawModalProps> = ({ isOpen, onClose })
 
             {/* Withdrawable Balance Card */}
             <div className="p-4 rounded-xl bg-[#121624] border border-[#1e263a] mb-5">
-              <span className="text-[10px] text-gray-400 uppercase tracking-wider block flex items-center gap-1 mb-1">
+              <span className="text-[10px] text-gray-400 uppercase tracking-wider flex items-center gap-1 mb-1">
                 <Wallet className="w-3 h-3 text-emerald-400" /> Withdrawable Balance
               </span>
               <span className="text-2xl font-black text-white">
