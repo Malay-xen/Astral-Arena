@@ -22,7 +22,7 @@ export const AdminMatchManagerModal: React.FC<AdminMatchManagerModalProps> = ({ 
   const [matches, setMatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Form: Fully customizable match creation (No leading space, exact names)
+  // Form: Fully customizable match creation
   const [newCategory, setNewCategory] = useState<'1v1' | '3v3' | '5v5'>('1v1');
   const [newSubMode, setNewSubMode] = useState('Large Map (Classic)');
   const [newEntryFee, setNewEntryFee] = useState('10');
@@ -163,6 +163,9 @@ export const AdminMatchManagerModal: React.FC<AdminMatchManagerModalProps> = ({ 
     }
   };
 
+  // ✅ CRITICAL GUARD: Do not render anything when modal is closed
+  if (!isOpen) return null;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
       <div className="relative w-full max-w-4xl bg-[#0e121d] border border-cyan-500/30 rounded-2xl p-6 shadow-2xl text-white max-h-[92vh] flex flex-col">
@@ -299,7 +302,7 @@ export const AdminMatchManagerModal: React.FC<AdminMatchManagerModalProps> = ({ 
                 </select>
               </div>
 
-              {/* Sub-Mode / Map (FREE EDITABLE INPUT FOR ALL MODES) */}
+              {/* Sub-Mode / Map */}
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="block text-xs font-semibold text-gray-400 uppercase">
@@ -315,7 +318,6 @@ export const AdminMatchManagerModal: React.FC<AdminMatchManagerModalProps> = ({ 
                   className="w-full bg-[#181e2e] border border-[#242e47] rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-cyan-500"
                 />
 
-                {/* Quick Presets based on selected mode */}
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   <span className="text-[10px] text-gray-500 py-0.5 flex items-center gap-0.5">
                     <Sparkles className="w-3 h-3 text-cyan-400" /> Presets:
@@ -360,7 +362,7 @@ export const AdminMatchManagerModal: React.FC<AdminMatchManagerModalProps> = ({ 
               </div>
             </div>
 
-            {/* FULLY CUSTOMIZABLE ENTRY FEE & WINNING AMOUNT */}
+            {/* Entry Fee & Winning Amount */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">
