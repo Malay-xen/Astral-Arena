@@ -5,7 +5,8 @@ import {
   Shield, 
   Users, 
   Clock, 
-  CheckCircle2
+  CheckCircle2,
+  Sparkles
 } from 'lucide-react';
 import api from '../../services/api';
 import { AdminMatchParticipant } from '../../types';
@@ -21,9 +22,9 @@ export const AdminMatchManagerModal: React.FC<AdminMatchManagerModalProps> = ({ 
   const [matches, setMatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Form: Create match
+  // Form: Fully customizable match creation (No leading space, exact names)
   const [newCategory, setNewCategory] = useState<'1v1' | '3v3' | '5v5'>('1v1');
-  const [newSubMode, setNewSubMode] = useState('Sanctum Duel (Large Map)');
+  const [newSubMode, setNewSubMode] = useState('Large Map (Classic)');
   const [newEntryFee, setNewEntryFee] = useState('10');
   const [newWinningAmount, setNewWinningAmount] = useState('15');
   const [newScheduledTime, setNewScheduledTime] = useState('');
@@ -34,7 +35,7 @@ export const AdminMatchManagerModal: React.FC<AdminMatchManagerModalProps> = ({ 
   const [participants, setParticipants] = useState<AdminMatchParticipant[]>([]);
   const [participantsLoading, setParticipantsLoading] = useState(false);
   const [editRoomCode, setEditRoomCode] = useState('');
-  const [editScheduledTime, setEditScheduledTime] = useState(''); // NEW: Edit match held time
+  const [editScheduledTime, setEditScheduledTime] = useState('');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -61,7 +62,6 @@ export const AdminMatchManagerModal: React.FC<AdminMatchManagerModalProps> = ({ 
   const handleOpenManage = async (match: any) => {
     setSelectedMatch(match);
     setEditRoomCode(match.room_code || '');
-    // Format timestamp for datetime-local input
     if (match.scheduled_time) {
       const dt = new Date(match.scheduled_time);
       const localIso = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -91,14 +91,14 @@ export const AdminMatchManagerModal: React.FC<AdminMatchManagerModalProps> = ({ 
     try {
       await api.post('/vs-matches/admin/create', {
         category: newCategory,
-        subMode: newSubMode,
+        subMode: newSubMode.trim(),
         entryFee: parseFloat(newEntryFee),
         winningAmount: parseFloat(newWinningAmount),
         scheduledTime: newScheduledTime ? new Date(newScheduledTime).toISOString() : null,
         roomCode: newRoomCode.trim() || null,
       });
 
-      setStatusMessage('Match created successfully!');
+      setStatusMessage('Match created successfully with custom settings!');
       fetchMatches();
       setActiveTab('LIST');
     } catch (err: any) {
@@ -108,7 +108,6 @@ export const AdminMatchManagerModal: React.FC<AdminMatchManagerModalProps> = ({ 
     }
   };
 
-  // NEW: Save BOTH Lobby Code and Match Held Time together
   const handleUpdateMatchDetails = async () => {
     if (!selectedMatch) return;
     setActionLoading(true);
@@ -163,8 +162,6 @@ export const AdminMatchManagerModal: React.FC<AdminMatchManagerModalProps> = ({ 
       setActionLoading(false);
     }
   };
-
-  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
@@ -278,10 +275,11 @@ export const AdminMatchManagerModal: React.FC<AdminMatchManagerModalProps> = ({ 
           </div>
         )}
 
-        {/* TAB 2: CREATE MATCH */}
+        {/* TAB 2: FULLY CUSTOMIZABLE CREATE MATCH */}
         {activeTab === 'CREATE' && (
           <form onSubmit={handleCreateMatch} className="flex-1 overflow-y-auto space-y-4 pr-1">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Category */}
               <div>
                 <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Category</label>
                 <select
@@ -289,76 +287,154 @@ export const AdminMatchManagerModal: React.FC<AdminMatchManagerModalProps> = ({ 
                   onChange={(e) => {
                     const cat = e.target.value as any;
                     setNewCategory(cat);
-                    setNewSubMode(cat === '1v1' ? 'Sanctum Duel (Large Map)' : cat === '3v3' ? 'Brawl Arena Blitz (3v3)' : 'Classic Conquest (5v5 Draft)');
+                    if (cat === '1v1') setNewSubMode('Large Map (Classic)');
+                    else if (cat === '3v3') setNewSubMode('Classic Arena');
+                    else setNewSubMode('Classic Conquest');
                   }}
-                  className="w-full bg-[#181e2e] border border-[#242e47] rounded-lg p-2.5 text-xs text-white"
+                  className="w-full bg-[#181e2e] border border-[#242e47] rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-cyan-500"
                 >
-                  <option value="1v1">1v1 Solo Duel (2 Slots)</option>
-                  <option value="3v3">3v3 Trio Clash (6 Slots)</option>
+                  <option value="1v1">1v1 Solo (2 Slots)</option>
+                  <option value="3v3">3v3 Trio (6 Slots)</option>
                   <option value="5v5">5v5 Full Squad (10 Slots)</option>
                 </select>
               </div>
 
+              {/* Sub-Mode / Map (FREE EDITABLE INPUT FOR ALL MODES) */}
               <div>
-                <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Sub-Mode / Map</label>
-                {newCategory === '1v1' ? (
-                  <select
-                    value={newSubMode}
-                    onChange={(e) => setNewSubMode(e.target.value)}
-                    className="w-full bg-[#181e2e] border border-[#242e47] rounded-lg p-2.5 text-xs text-white"
-                  >
-                    <option value="Sanctum Duel (Large Map)">Large Map • Sanctum Duel</option>
-                    <option value="Brawl Blitz (Small Map)">Small Map • Brawl Blitz</option>
-                  </select>
-                ) : (
-                  <input
-                    type="text"
-                    required
-                    value={newSubMode}
-                    onChange={(e) => setNewSubMode(e.target.value)}
-                    className="w-full bg-[#181e2e] border border-[#242e47] rounded-lg p-2.5 text-xs text-white"
-                  />
-                )}
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-xs font-semibold text-gray-400 uppercase">
+                    Sub-Mode / Map (Type Any Custom Name)
+                  </label>
+                </div>
+                <input
+                  type="text"
+                  required
+                  value={newSubMode}
+                  onChange={(e) => setNewSubMode(e.target.value)}
+                  placeholder="e.g. Large Map (Classic) or Custom Rule"
+                  className="w-full bg-[#181e2e] border border-[#242e47] rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-cyan-500"
+                />
+
+                {/* Quick Presets based on selected mode */}
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  <span className="text-[10px] text-gray-500 py-0.5 flex items-center gap-0.5">
+                    <Sparkles className="w-3 h-3 text-cyan-400" /> Presets:
+                  </span>
+                  {newCategory === '1v1' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setNewSubMode('Large Map (Classic)')}
+                        className="px-2 py-0.5 rounded bg-[#131a29] border border-[#1f2a40] hover:border-cyan-500/50 text-[10px] text-cyan-300 transition-all"
+                      >
+                        Large Map (Classic)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewSubMode('Small Map (Brawl)')}
+                        className="px-2 py-0.5 rounded bg-[#131a29] border border-[#1f2a40] hover:border-cyan-500/50 text-[10px] text-amber-300 transition-all"
+                      >
+                        Small Map (Brawl)
+                      </button>
+                    </>
+                  )}
+                  {newCategory === '3v3' && (
+                    <button
+                      type="button"
+                      onClick={() => setNewSubMode('Classic Arena')}
+                      className="px-2 py-0.5 rounded bg-[#131a29] border border-[#1f2a40] hover:border-cyan-500/50 text-[10px] text-cyan-300 transition-all"
+                    >
+                      Classic Arena
+                    </button>
+                  )}
+                  {newCategory === '5v5' && (
+                    <button
+                      type="button"
+                      onClick={() => setNewSubMode('Classic Conquest')}
+                      className="px-2 py-0.5 rounded bg-[#131a29] border border-[#1f2a40] hover:border-cyan-500/50 text-[10px] text-cyan-300 transition-all"
+                    >
+                      Classic Conquest
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            {/* FULLY CUSTOMIZABLE ENTRY FEE & WINNING AMOUNT */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Entry Fee (₹)</label>
-                <select
+                <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">
+                  Entry Fee (₹) — Custom Input
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  step="any"
+                  required
                   value={newEntryFee}
-                  onChange={(e) => {
-                    setNewEntryFee(e.target.value);
-                    setNewWinningAmount(e.target.value === '10' ? '15' : e.target.value === '20' ? '30' : '80');
-                  }}
-                  className="w-full bg-[#181e2e] border border-[#242e47] rounded-lg p-2.5 text-xs text-white"
-                >
-                  <option value="10">₹10 Entry</option>
-                  <option value="20">₹20 Entry</option>
-                  <option value="50">₹50 Entry</option>
-                </select>
+                  onChange={(e) => setNewEntryFee(e.target.value)}
+                  placeholder="e.g. 10, 20, 50, 100"
+                  className="w-full bg-[#181e2e] border border-[#242e47] rounded-lg p-2.5 text-xs text-white font-bold focus:outline-none focus:border-cyan-500"
+                />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Winning Payout (₹)</label>
+                <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">
+                  Winning Payout (₹) — Custom Input
+                </label>
                 <input
                   type="number"
+                  min="1"
+                  step="any"
                   required
                   value={newWinningAmount}
                   onChange={(e) => setNewWinningAmount(e.target.value)}
-                  className="w-full bg-[#181e2e] border border-[#242e47] rounded-lg p-2.5 text-xs text-white"
+                  placeholder="e.g. 15, 30, 80, 160"
+                  className="w-full bg-[#181e2e] border border-[#242e47] rounded-lg p-2.5 text-xs text-emerald-400 font-bold focus:outline-none focus:border-cyan-500"
                 />
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            {/* Quick Pricing Presets */}
+            <div className="flex flex-wrap items-center gap-2 p-2.5 bg-[#121624] border border-[#1e263a] rounded-xl">
+              <span className="text-[11px] text-gray-400 font-bold">Quick Tiers:</span>
+              {[
+                { fee: '10', win: '15' },
+                { fee: '20', win: '30' },
+                { fee: '50', win: '80' },
+                { fee: '100', win: '160' },
+                { fee: '200', win: '340' },
+                { fee: '500', win: '850' },
+              ].map((tier) => (
+                <button
+                  key={tier.fee}
+                  type="button"
+                  onClick={() => {
+                    setNewEntryFee(tier.fee);
+                    setNewWinningAmount(tier.win);
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all border ${
+                    newEntryFee === tier.fee && newWinningAmount === tier.win
+                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                      : 'bg-[#181e2e] text-gray-400 border-[#242e47] hover:text-white'
+                  }`}
+                >
+                  ₹{tier.fee} ➔ ₹{tier.win}
+                </button>
+              ))}
+            </div>
+
+            {/* Match Time & Initial Room Code */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Match Held Time (Date & Time)</label>
+                <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">
+                  Match Held Time (Date & Time)
+                </label>
                 <input
                   type="datetime-local"
                   value={newScheduledTime}
                   onChange={(e) => setNewScheduledTime(e.target.value)}
-                  className="w-full bg-[#181e2e] border border-[#242e47] rounded-lg p-2.5 text-xs text-white"
+                  className="w-full bg-[#181e2e] border border-[#242e47] rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-cyan-500"
                 />
               </div>
 
@@ -370,8 +446,8 @@ export const AdminMatchManagerModal: React.FC<AdminMatchManagerModalProps> = ({ 
                   type="text"
                   value={newRoomCode}
                   onChange={(e) => setNewRoomCode(e.target.value)}
-                  placeholder="Leave empty initially"
-                  className="w-full bg-[#181e2e] border border-[#242e47] rounded-lg p-2.5 text-xs text-white"
+                  placeholder="Leave empty or enter code"
+                  className="w-full bg-[#181e2e] border border-[#242e47] rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-cyan-500"
                 />
               </div>
             </div>
@@ -381,12 +457,12 @@ export const AdminMatchManagerModal: React.FC<AdminMatchManagerModalProps> = ({ 
               disabled={actionLoading}
               className="w-full py-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-gray-950 font-black text-xs transition-all shadow-md shadow-cyan-500/20"
             >
-              {actionLoading ? 'Creating...' : 'Publish Match to Players'}
+              {actionLoading ? 'Creating Custom Match...' : 'Publish Match to Players'}
             </button>
           </form>
         )}
 
-        {/* TAB 3: MANAGE SPECIFIC MATCH, LOBBY CODE, AND MATCH HELD TIME */}
+        {/* TAB 3: MANAGE SPECIFIC MATCH & PARTICIPANTS */}
         {activeTab === 'MANAGE' && selectedMatch && (
           <div className="flex-1 flex flex-col overflow-hidden space-y-4">
             <div className="p-3.5 bg-[#121624] border border-[#1e263a] rounded-xl flex items-center justify-between text-xs">
@@ -400,7 +476,6 @@ export const AdminMatchManagerModal: React.FC<AdminMatchManagerModalProps> = ({ 
               </div>
             </div>
 
-            {/* NEW: Set Both Lobby Code & Match Held Time Together */}
             <div className="p-4 bg-[#141b2c] border border-cyan-500/30 rounded-xl space-y-3">
               <div className="text-xs font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
                 <Clock className="w-4 h-4 text-cyan-400" />
@@ -502,7 +577,7 @@ export const AdminMatchManagerModal: React.FC<AdminMatchManagerModalProps> = ({ 
               )}
             </div>
 
-            {/* Cancel match */}
+            {/* Cancel Match */}
             {selectedMatch.status !== 'COMPLETED' && selectedMatch.status !== 'CANCELLED' && (
               <div className="pt-2 border-t border-[#1b2234] flex justify-end">
                 <button
